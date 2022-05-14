@@ -1,3 +1,6 @@
+#TODO add check for email sent in last 24hrs
+# use net time for time stamps after confirming type
+
 # Import all the necessary libraries
 from time import *
 from datetime import datetime as dt
@@ -18,12 +21,66 @@ from moistureSensor import MoistureSensor
 from TemperatureSensor import TemperatureSensor
 
 def main():
+    # helper functions
+
+    # route: string containing one of the Ubidots routes (Temp1-3, Moisture1-3)
+    # value: sensor value
+    # timestamp: (int) unix time
+    def postUbi(route, value, timestamp):
+        try:
+            req = {"req": "web.post"}
+            req["route"] = "Ubidots: " + route
+            req["body"] = {"value": value, "timestamp": epoch }
+            rsp = card.Transaction(req)
+            print(f"Sending Temp1 Data\nNotecard response: {rsp}\n")
+            return True
+        except:
+            return False
+
+    # subject: string containing subject line
+    # message: string containing message text
+    # to: string containing destination email address
+    # sends email through notecard
+    # return true if succesful false otherwise
+    def sendEmail(subject, message, to):
+        try:
+            req = {"req": "web.post"}
+            req["route"] = "Email"
+            req["body"] = {"personalizations": [{"to": [{"email": e}]}],"from": {"email": "ucce.bin.monitoring@gmail.com"},"subject": subject,"content": [{"type": "text/plain", "value": message}]}
+            #rsp = card.Transaction(req)
+            print("Sending Email\n")
+            print("to: " + to + "\nsubject: " + subject + "\nmessage: " + message + "\n")
+            #print(f"Notecard response: {rsp}\n")
+            return True
+        except:
+            return False
+
+    # gets unix time from a server specified in notehub routes
+    # returns (int) unixtime if successful -1 otherwise 
+    def getNetTime():
+        try:
+            req = {"req": "web.get"}
+            req["route"] = "Time"
+            rsp = card.Transaction(req)
+            print(f"Getting Time\nNotecard response: {rsp}\n")
+            return (json.loads(rsp)["unixtime"])
+        except:
+            return -1
+        
     # Declare notecard stuff
     productUID = "com.gmail.ucce.bin.monitoring:compost_monitoring_system"
     port = I2C("/dev/i2c-1")
     card = notecard.OpenI2C(port, 0, 0)
     
     # Declare objects.
+    tempUpperThreshold = 50
+    tempLowerThreshold = 49
+    moistureUpperThreshold = 79
+    moistureLowerThreshold = 80
+    thresholdFlags = [0,0,0,0,0,0] #i(0-2): temp1-3, i(3-5): moisture1-3. 1=out of threshold
+    waitTimeDefault = 1800 # set default report interval 
+    waitTime = waitTimeDefault # wait time that is actually used
+    emails = ["scamacho@scu.edu"]
     moisture_one = MoistureSensor(MCP.P0)
     moisture_two = MoistureSensor(MCP.P1)
     moisture_three = MoistureSensor(MCP.P3)
@@ -63,18 +120,32 @@ def main():
     while (True):
         # Sets up the temperature variables.
         # Records values to appropriate arrays to be used for plots
+        # Check if values are within threshold
         temperature_one = temp_one.read_temp()
         temp1.append(temperature_one)
+        if(not (tempUpperThreshold > temperature_one > tempLowerThreshold)):
+            thresholdFlags[0] = 1
         temperature_two = temp_two.read_temp()
         temp2.append(temperature_two)
+        if(not (tempUpperThreshold > temperature_two > tempLowerThreshold)):
+            thresholdFlags[1] = 1
         temperature_three = temp_three.read_temp()
         temp3.append(temperature_three)
+        if(not (tempUpperThreshold > temperature_three > tempLowerThreshold)):
+            thresholdFlags[2] = 1
         current_M1_Val = moisture_one.mapSensorVals()
         moist1.append(current_M1_Val)
+        if(not (tempUpperThreshold > current_M1_Val > tempLowerThreshold)):
+            thresholdFlags[3] = 1
         current_M2_Val = moisture_two.mapSensorVals()
         moist2.append(current_M2_Val)
+        if(not (tempUpperThreshold > current_M2_Val > tempLowerThreshold)):
+            thresholdFlags[4] = 1
         current_M3_Val = moisture_three.mapSensorVals()
         moist3.append(current_M3_Val)
+        if(not (tempUpperThreshold > current_M1_Val > tempLowerThreshold)):
+            thresholdFlags[5] = 1
+
         # Stores time in seconds when values were taken in array for plotting
         timeS.append(int(dt.now().strftime("%H"))*60*60+int(dt.now().strftime("%M"))*60+int(dt.now().strftime("%S")))
 
@@ -108,60 +179,49 @@ def main():
         epoch = time.time() * 1000
 
         # Trigger route to send Temp1 data to Ubidots
-        req = {"req": "web.post"}
-        req["route"] = "Ubidots: Temp1"
-        req["body"] = {"value": temperature_one, "timestamp": epoch }
-        rsp = card.Transaction(req)
-        print(f"Sending Temp1 Data\nNotecard response: {rsp}\n")
+        postUbi("Temp1", temperature_one, epoch)
         time.sleep(5)
 
         # Trigger route to send Temp2 data to Ubidots
-        req = {"req": "web.post"}
-        req["route"] = "Ubidots: Temp2"
-        req["body"] = {"value": temperature_two, "timestamp": epoch }
-        rsp = card.Transaction(req)
-        print(f"Sending Temp2 Data\nNotecard response: {rsp}\n")
+        postUbi("Temp2", temperature_two, epoch)
         time.sleep(5)
         
         # Trigger route to send Temp3 data to Ubidots
-        req = {"req": "web.post"}
-        req["route"] = "Ubidots: Temp3"
-        req["body"] = {"value": temperature_three, "timestamp": epoch }
-        rsp = card.Transaction(req)
-        print(f"Sending Temp3 Data\nNotecard response: {rsp}\n")
+        postUbi("Temp3", temperature_three, epoch)
         time.sleep(5)
         
         # Trigger route to send Moisture1 data to Ubidots
-        req = {"req": "web.post"}
-        req["route"] = "Ubidots: Moisture1"
-        req["body"] = {"value": current_M1_Val, "timestamp": epoch }
-        rsp = card.Transaction(req)
-        print(f"Sending Moisture1 Data\nNotecard response: {rsp}\n")
+        postUbi("Moisture1", current_M1_Val, epoch)
         time.sleep(5)
         
         # Trigger route to send Moisture2 data to Ubidots
-        req = {"req": "web.post"}
-        req["route"] = "Ubidots: Moisture2"
-        req["body"] = {"value": current_M2_Val, "timestamp": epoch }
-        rsp = card.Transaction(req)
-        print(f"Sending Moisture2 Data\nNotecard response: {rsp}\n")
+        postUbi("Moisture2", current_M2_Val, epoch)
         time.sleep(5)
 
         # Trigger route to send Moisture3 data to Ubidots
-        req = {"req": "web.post"}
-        req["route"] = "Ubidots: Moisture3"
-        req["body"] = {"value": current_M3_Val, "timestamp": epoch }
-        rsp = card.Transaction(req)
-        print(f"Sending Moisture3 Data\nNotecard response: {rsp}\n")
-        
+        postUbi("Moisture3", current_M3_Val, epoch)
+        time.sleep(5)
+        # Send email if values are out of threshold
+        if(thresholdFlags.count(1) > 0):
+            message = "Hi just want to make sure this works. sysTime: "
+            netTime = getNetTime()
+            message = message + str(epoch) + " netTime: " + str(netTime)
+            #print(message + "\n")
+            for e in emails:  
+                sendEmail("Sensor values out of threshold", message, e)
+        # if error
+        # print("Connection failed. retrying in 5 minutes")
+        # waitTime = 300 #5 minutes
+
         # Write collected data to text file then wait 30 minutes
         str_dictionary = repr(curr_data)
         file.write(str_dictionary + "\n")
-        time.sleep(1800)
-        #time.sleep(30)
+        time.sleep(waitTime)
+        waitTime = waitTimeDefault # reset wait time back to default if it was changed
         # Set day 2 to be used to see if the day has changed by comparing against day 1
         day2 = dt.now().strftime("%d")
         
+
         # If day has changed, open new data file, generate moisture and temperature plots, and reset arrays and day 1
         if day1 != day2:
             file.close()
@@ -193,5 +253,9 @@ def main():
             moist3 = []
             timeS = []
             day1 = dt.now().strftime("%d")
+        
+        # reset threshold flags
+        for i in range(len(thresholdFlags)):
+            thresholdFlags[i] = 0
 
 main()
