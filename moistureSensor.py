@@ -7,6 +7,27 @@ class MoistureSensor(ReadSensor):
     def __init__(self, pinNum):
         super().__init__(pinNum)
 
+    def calibrateAir(self):
+        print("air")
+        sCalibrateVals = []
+
+        for i in range(5):
+            sCalibrateVals.insert(i, self.getVal())
+            print("\tAdding Val: ", sCalibrateVals[i])
+            time.sleep(1)
+
+            self.airVal = np.mean(sCalibrateVals)
+
+    def calibrateWater(self):
+        print("water")
+        sCalibrateVals = []
+        for i in range(5):
+            sCalibrateVals.insert(i, self.getVal())
+            print("\tAdding Val: ", sCalibrateVals[i])
+            time.sleep(1)
+
+        self.waterVal = np.mean(sCalibrateVals)
+
     # Calibrate the set moisture sensors.
     def calibrate(self):
         sCalibrateVals = []
